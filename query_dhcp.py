@@ -159,24 +159,19 @@ for result in results:
 
                     dhcp_payload[dhcp_payload_key] = dhcp_payload_data
 
-            # Check to see if our responding server is accounted for, use MAC + IP as identifier
-            if (
-                str(dhcp_payload["server_id"]) + "@" + str(bootp_payload["src"])
-                in offers.keys()
-            ):
+            # Check to see if our responding server is accounted for, use MAC as identifier
+            if str(bootp_payload["src"]) in offers.keys():
                 pass
             else:
                 # Populate dict using IP and MAC as key
-                offers[
-                    str(dhcp_payload["server_id"]) + "@" + str(bootp_payload["src"])
-                ] = {
+                offers[str(bootp_payload["src"])] = {
                     "bootp_payload": bootp_payload,
                     "dhcp_payload": dhcp_payload,
                 }
 
-# If we didn't detect any valid offers exit with error code
-if len(offers) == 0:
-    print("No valid DHCP offers received.", file=sys.stderr)
+# If the number of unique offers is less than valid MACs exit with error code
+if len(offers.keys()) < len(args.macs):
+    print("Fewer than configured DHCP offers received.", file=sys.stderr)
     exit(-1)
 
 for offer in offers.keys():
