@@ -7,7 +7,36 @@ from dns import resolver
 from dns import rdatatype
 from dns.resolver import LifetimeTimeout
 from dns.nameserver import Do53Nameserver
+from argparse import ArgumentParser
+from sys import exit
 
+parser = ArgumentParser(
+    prog="query_dhcp", description="Query network for DHCP server(s)"
+)
+parser.add_argument(
+    "-m",
+    "--macs",
+    nargs="+",
+    type=str,
+    required=True,
+    help="Provide a space-separated list of MACs in AA:BB:CC:DD:EE:FF A1:B2:C3:D4:E5:F6 format.",
+)
+parser.add_argument(
+    "-t",
+    "--timeout",
+    type=int,
+    default=1,
+    help="Provide an integer number of seconds to wait for DHCP and reverse DNS queries.  Defaults to 1.",
+)
+parser.add_argument(
+    "--output",
+    action="store_true",
+    help="Provide this argument to print output to stdout.",
+)
+
+args = parser.parse_args()
+
+# print(args)
 
 # Instantiate DNS resolver for later use
 resolver = resolver.Resolver()
@@ -15,9 +44,6 @@ resolver = resolver.Resolver()
 
 # Dynamically cast bytes
 def bytes2str(s):
-
-    # TODO: Add logic for tuple/list/dict nested bytes
-
     if type(s) is str:
         # Return back if already  a string
         return s
@@ -78,8 +104,7 @@ dhcp_discover = (
 sniffer = AsyncSniffer()
 sniffer.start()
 # Flood the network with DHCP packets
-srpflood(dhcp_discover, timeout=1)
-# srp(dhcp_discover,timeout=1) # Insufficient to fully hit all DHCP servers
+srpflood(dhcp_discover, verbose=0, timeout=args.timeout)
 # Save our results
 results = sniffer.stop()
 
@@ -87,13 +112,22 @@ results = sniffer.stop()
 offers = {}
 
 for result in results:
-    # result.show() Shows full packet layer cake
+    # result.show() # Shows full packet layer cake
     # result is a list of layers
     # We only care if the 'DHCP' class is present in the packet's layers
     if DHCP in result:
-        # print(f'Found DHCP traffic: {DHCP_MSG_CODES[result[DHCP].options[0][1]] }')
         # We only care about DHCPOFFER
         if ("message-type", 2) in result[DHCP].options:
+            # Check that our DHCP server's MAC is valid, exit with error if not
+            if result.src not in args.macs:
+                print(
+                    f"Script returned an unknown DHCP server.\nPermitted MACs: {args.macs}\nDHCP MAC: {result.src}",
+                    file=sys.stderr,
+                )
+                exit(-1)
+            else:
+                pass
+
             # Pack our data in dicts for convenient access
             bootp_payload = {
                 "src": result.src,  # src MAC
@@ -116,43 +150,22 @@ for result in results:
                     # Substitute our friendly message type name
                     dhcp_payload[option[0]] = DHCP_MSG_CODES[option[1]]
                 else:
-                    # dhcp_payload[option[0]] = bytes2str(option[1])
-
                     # First element of tuple becomes dictionary key
-                    # Remaining elements become list
+                    # Remaining elements become value
 
                     dhcp_payload_key = option[0]
 
-                    if len(option[1:]) <= 1:
-                        # If the length of the tuple is 1 or less, there is a single element or None, save as string
-                        #print("lenght of of tuple <= 1")
-                        dhcp_payload_data = bytes2str(option[1])
-                        #print(dhcp_payload_data)
-                    else:
-                        #print("lenght of tuple >1")
-                        dhcp_payload_data = bytes2str(option[1:])
+                    dhcp_payload_data = option[1]
 
-                        dhcp_payload_data = option[1:]  # Tuple elements 1 thru N
-
-                    dhcp_payload[dhcp_payload_key] = (
-                        dhcp_payload_data  # bytes2str(option[1])
-                    )
+                    dhcp_payload[dhcp_payload_key] = dhcp_payload_data
 
             # Check to see if our responding server is accounted for, use MAC + IP as identifier
             if (
                 str(dhcp_payload["server_id"]) + "@" + str(bootp_payload["src"])
                 in offers.keys()
             ):
-                # print('Already exists: ' + dhcp_payload['server_id'] + '@' + bootp_payload["src"])
                 pass
             else:
-                print(
-                    "Adding: "
-                    + str(dhcp_payload["server_id"])
-                    + "@"
-                    + str(bootp_payload["src"])
-                )
-
                 # Populate dict using IP and MAC as key
                 offers[
                     str(dhcp_payload["server_id"]) + "@" + str(bootp_payload["src"])
@@ -161,56 +174,48 @@ for result in results:
                     "dhcp_payload": dhcp_payload,
                 }
 
-print(f"\nDHCP Server Inventory:\n")
+# If we didn't detect any valid offers exit with error code
+if len(offers) == 0:
+    print("No valid DHCP offers received.", file=sys.stderr)
+    exit(-1)
+
 for offer in offers.keys():
     mac_address = offers[offer]["bootp_payload"]["src"]
-    ns_addresses = offers[offer]["dhcp_payload"]["name_server"]
+    ns_addresses = offers[offer]["dhcp_payload"][
+        "name_server"
+    ]  # Note this returns tuple if multiple, str if singleton
+
+    if type(ns_addresses) is str:
+        ns1_address = ns_addresses
+    elif type(ns_addresses) is tuple:
+        ns1_address = ns_addresses[0]
+    else:
+        raise Exception("Could not process returned name server(s)!", file=sys.stderr)
+        exit(-1)
 
     # Reverse lookup our first server's name
+    # Create nameserver object for lookup
 
-    # Create nameserver objects for lookup
-    nameservers = []
-    for ns_address in ns_addresses:
-        nameservers.append(Do53Nameserver(address=ns_address))
+    resolver.nameservers = [Do53Nameserver(address=ns1_address)]
 
-    # Add the array of nameservers to our resolver
-    resolver.nameservers = nameservers
+    reversed_dhcp_server_address = str(
+        ip_address(offers[offer]["dhcp_payload"]["server_id"]).reverse_pointer
+    )
 
-    #print('ns addresses', ns_addresses)
-    #print('first ns address', ns_addresses[0])
-    #print(type(ns_addresses))
-
-    #print('ns addresses:' , ns_addresses)
-    #print('type ns addresses: ', type(ns_addresses))
-
-    # TODO standardize tuples
-    if type(ns_addresses) is str:
-        formal_ip = ip_address(ns_addresses)
-    elif type(ns_addresses) is tuple:
-        formal_ip = ip_address(ns_addresses[0])
-    else:
-        print('WTFFFFFFFFFFFFFFF')
-    
-    #print('formal ip', formal_ip)
-
-    reversed_ns_address = formal_ip.reverse_pointer
-
-    #print('reversed: ', reversed_ns_address)
-    #print(type(reversed_ns_address))
-
-    # Try/catch for resolution failure
+    # Try/catch for resolution failure -- soft fail, as rDNS may not be in place
     try:
         resolved_string = resolver.resolve(
             # Resolve the first response we received
-            reversed_ns_address,
+            reversed_dhcp_server_address,
             rdtype=rdatatype.PTR,
-        )[0] # Only one address resolved only one resultant output
+        )[
+            0
+        ]  # Only one address resolved only one resultant output
 
     except (LifetimeTimeout, Exception) as err:
         # print(str(err))
         resolved_string = "Reverse DNS lookup failed, check DNS zone."
 
-    # TODO FIX TUPLES
     name_server = offers[offer]["dhcp_payload"]["name_server"]
 
     if type(name_server) is str:
@@ -218,24 +223,16 @@ for offer in offers.keys():
     elif type(name_server) is tuple:
         name_server_string = ", ".join(name_server)
 
-
-    print(offers[offer])
-
-
-    print(
-        "Server Hostname (rDNS): %s\nServer Vendor: %s\nServer IP: %s\nServer MAC: %s\nServer Domain: %s\nDomain Name Servers: %s\nClient Issued IP: %s"
-        % (
-            resolved_string,
-            MacLookup().lookup(mac_address),
-            offers[offer]["dhcp_payload"]["server_id"],
-            offers[offer]["bootp_payload"]["src"],
-            offers[offer]["dhcp_payload"]["domain"],
-            name_server_string,
-            offers[offer]["bootp_payload"]["yiaddr"],
+    if args.output:
+        print(
+            "\nServer Hostname (rDNS): %s\nServer Vendor: %s\nServer IP: %s\nServer MAC: %s\nServer Domain: %s\nDomain Name Servers: %s\nClient Issued IP: %s"
+            % (
+                resolved_string,
+                MacLookup().lookup(mac_address),
+                offers[offer]["dhcp_payload"]["server_id"],
+                offers[offer]["bootp_payload"]["src"],
+                bytes2str(offers[offer]["dhcp_payload"]["domain"]),
+                name_server_string,
+                offers[offer]["bootp_payload"]["yiaddr"],
+            )
         )
-    )
-
-
-    print(offers[offer])
-
-    # # print(offers[offer])
