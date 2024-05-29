@@ -9,18 +9,33 @@ from dns.resolver import LifetimeTimeout
 from dns.nameserver import Do53Nameserver
 from argparse import ArgumentParser
 from sys import exit
+from psutil import net_if_addrs
+from socket import AF_PACKET, AF_LINK
 
 parser = ArgumentParser(
     prog="query_dhcp", description="Query network for DHCP server(s)"
 )
-parser.add_argument(
+
+
+mac_group = parser.add_mutually_exclusive_group(required=True)
+
+mac_group.add_argument(
     "-m",
     "--macs",
     nargs="+",
     type=str,
-    required=True,
+    required=False,
     help="Provide a space-separated list of MACs in AA:BB:CC:DD:EE:FF A1:B2:C3:D4:E5:F6 format.",
 )
+
+mac_group.add_argument(
+    "-i",
+    "--interfaces",
+    type=str,
+    required=False,
+    help="Provide a space-separated list of interface names."
+    )
+
 parser.add_argument(
     "-t",
     "--timeout",
@@ -37,6 +52,26 @@ parser.add_argument(
 args = parser.parse_args()
 
 # print(args)
+
+# Compose list of MAC addresses if provided with interface(s)
+
+if args.macs:
+    macs = args.macs
+else:
+    # Make a list to store MACs
+    macs = []
+
+    for interface_name in args.interfaces:
+        # Each interface can have multiple snicaddr objects, check them
+        interface_addresses = net_if_addrs[interface_name]
+        for interface_address in interface_addresses:
+            # Check the family attribute type as we want AF_LINK or AF_PACKET (per source code these are aliases on Linux)
+            if interface_address.family is AF_LINK or interface_address.family is AF_PACKET:
+                # This is our MAC address
+                macs.append(interface_address.address)
+
+    print("macs are " + macs)
+
 
 # Instantiate DNS resolver for later use
 resolver = resolver.Resolver()
@@ -119,9 +154,9 @@ for result in results:
         # We only care about DHCPOFFER
         if ("message-type", 2) in result[DHCP].options:
             # Check that our DHCP server's MAC is valid, exit with error if not
-            if result.src not in args.macs:
+            if result.src not in macs:
                 print(
-                    f"Script returned an unknown DHCP server.\nPermitted MACs: {args.macs}\nDHCP MAC: {result.src}",
+                    f"Script returned an unknown DHCP server.\nPermitted MACs: {macs}\nDHCP MAC: {result.src}",
                     file=sys.stderr,
                 )
                 exit(-1)
@@ -170,7 +205,7 @@ for result in results:
                 }
 
 # If the number of unique offers is less than valid MACs exit with error code
-if len(offers.keys()) < len(args.macs):
+if len(offers.keys()) < len(macs):
     print("Fewer than configured DHCP offers received.", file=sys.stderr)
     exit(-1)
 
