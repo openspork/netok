@@ -24,14 +24,13 @@ parser = ArgumentParser(
 )
 
 
-mac_group = parser.add_mutually_exclusive_group(required=True)
+mac_group = parser.add_mutually_exclusive_group()#required=True)
 
 mac_group.add_argument(
     "-m",
     "--macs",
     nargs="+",
     type=str,
-    required=False,
     help="Provide a space-separated list of MACs in AA:BB:CC:DD:EE:FF A1:B2:C3:D4:E5:F6 format.",
 )
 
@@ -40,9 +39,11 @@ mac_group.add_argument(
     "--interfaces",
     nargs="+",
     type=str,
-    required=False,
-    help="Provide a space-separated list of interface names."
+    help="Provide a space-separated list of interface names.  'br0' will be used if neither MAC or interface information is provided."
     )
+
+# Use br0 as default interface if nothing supplied
+parser.set_defaults(interfaces=['br0'])
 
 parser.add_argument(
     "-t",
