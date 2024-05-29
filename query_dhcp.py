@@ -8,9 +8,16 @@ from dns import rdatatype
 from dns.resolver import LifetimeTimeout
 from dns.nameserver import Do53Nameserver
 from argparse import ArgumentParser
-from sys import exit
+from sys import exit, platform
 from psutil import net_if_addrs
-from socket import AF_PACKET, AF_LINK
+
+# Handle cross-platform interface specifics
+if sys.platform == 'win32':
+    from socket import AF_LINK
+elif sys.platform == 'linux':
+    from socket import AF_PACKET
+else:
+    exit(-1)
 
 parser = ArgumentParser(
     prog="query_dhcp", description="Query network for DHCP server(s)"
@@ -31,6 +38,7 @@ mac_group.add_argument(
 mac_group.add_argument(
     "-i",
     "--interfaces",
+    nargs="+",
     type=str,
     required=False,
     help="Provide a space-separated list of interface names."
@@ -63,14 +71,22 @@ else:
 
     for interface_name in args.interfaces:
         # Each interface can have multiple snicaddr objects, check them
-        interface_addresses = net_if_addrs[interface_name]
+        interface_addresses = net_if_addrs()[interface_name]
         for interface_address in interface_addresses:
             # Check the family attribute type as we want AF_LINK or AF_PACKET (per source code these are aliases on Linux)
-            if interface_address.family is AF_LINK or interface_address.family is AF_PACKET:
-                # This is our MAC address
-                macs.append(interface_address.address)
+            # Handle cross-platform interface specifics
+            if sys.platform == 'win32':
+                if interface_address.family.name is AF_LINK.name:
+                    # This is our MAC address, fix Windows formatting
+                    macs.append(interface_address.address.replace('-',':'))
+            elif sys.platform == 'linux':
+                if interface_address.family.name is AF_PACKET.name:
+                    # This is our MAC address
+                    macs.append(interface_address.address)
+            else:
+                exit(-1)
 
-    print("macs are " + macs)
+    print("macs are " + str(macs))
 
 
 # Instantiate DNS resolver for later use
