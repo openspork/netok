@@ -1,7 +1,7 @@
 from scapy.all import *
 from scapy.arch import get_if_raw_hwaddr
 from scapy.utils import mac2str
-from mac_vendor_lookup import MacLookup
+from mac_vendor_lookup import MacLookup, VendorNotFoundError
 from ipaddress import ip_address
 from dns import resolver
 from dns import rdatatype
@@ -271,11 +271,16 @@ for offer in offers.keys():
         name_server_string = ", ".join(name_server)
 
     if args.output:
+        try:
+            mac_vendor = MacLookup().lookup(mac_address)
+        except (VendorNotFoundError, Exception) as err:
+            mac_vendor = 'Unknown'
+
         print(
             "\nServer Hostname (rDNS): %s\nServer Vendor: %s\nServer IP: %s\nServer MAC: %s\nServer Domain: %s\nDomain Name Servers: %s\nClient Issued IP: %s"
             % (
                 resolved_string,
-                MacLookup().lookup(mac_address),
+                mac_vendor,
                 offers[offer]["dhcp_payload"]["server_id"],
                 offers[offer]["bootp_payload"]["src"],
                 bytes2str(offers[offer]["dhcp_payload"]["domain"]),
