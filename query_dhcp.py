@@ -87,7 +87,7 @@ else:
             else:
                 exit(-1)
 
-    print("macs are " + str(macs))
+    #print("macs are " + str(macs))
 
 
 # Instantiate DNS resolver for later use
