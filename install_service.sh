@@ -16,10 +16,11 @@ unit=dhcpmon_$(hostname)_$(</etc/machine-id).service
 sed -e "s|SCRIPTDIR|$(pwd)|g" dhcpmon.service > $unit
 
 # Symlink unit definition to system unit repo
-ln -s $(pwd)/$unit /etc/systemd/system/dhcpmon.service
+
+cp $(pwd)/$unit /etc/systemd/system/dhcpmon.service
 
 # Rescan systemd units
 systemctl daemon-reload
 
 # Start an enable (symlink) service
-#systemctl enable dhcpmon.service --now
+systemctl enable dhcpmon.service --now
