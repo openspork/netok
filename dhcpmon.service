@@ -1,11 +1,16 @@
 [Unit]
 Description=Monitors Network for DHCP Responsivity
+After=network-online.target
 
 [Install]
-WantedBy=default.target # Use whatever the system's default target is (usually a symlink to multi-user)
+# Use whatever the system's default target is (usually a symlink to multi-user)
+WantedBy=default.target 
 
 [Service]
-ExecStart=/opt/dhcpmon/venv/bin/python /opt/dhcpmon/dhcpmon/query_dhcp.py
-Type=notify # Tell systemd python will keep it up to date with notifications
-WatchdogSec=300 # Issue watchdog notications every 5 min, more counts as a failure
-Restart=on-failure # If fails, restart the script
+Environment=PYTHONUNBUFFERED=1
+ExecStart=SCRIPTDIR/venv/bin/python SCRIPTDIR/query_dhcp.py --output -f 1
+# Tell systemd python will keep it up to date with notifications
+Type=notify
+# Issue watchdog notications every 5 min, more counts as a failure
+WatchdogSec=300
+Restart=always
