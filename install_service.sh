@@ -10,10 +10,10 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # Generate name for unique systemd unit
-$unit = dhcpmon_$(hostname)_$(</etc/machine-id).service
+unit=dhcpmon_$(hostname)_$(</etc/machine-id).service
 
 # Copy our service definition to new file with cwd substituted
-sed -e “s|SCRIPTDIR|$(pwd)|g dhcpmon.service > $unit
+sed -e "s|SCRIPTDIR|$(pwd)|g" dhcpmon.service > $unit
 
 # Symlink unit definition to system unit repo
 ln -s $(pwd)/$unit /etc/systemd/system/dhcpmon.service
