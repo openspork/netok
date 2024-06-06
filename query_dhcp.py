@@ -11,6 +11,7 @@ from argparse import ArgumentParser
 from sys import exit, platform
 from psutil import net_if_addrs
 from time import sleep
+from subprocess import run
 
 # Handle cross-platform import specifics
 if sys.platform == "win32":
@@ -68,7 +69,13 @@ parser.add_argument(
     help="Provide the checking frequency in seconds to wait between DHCP checks.",
 )
 
-
+parser.add_argument(
+    "-c",
+    "--command",
+    type=str,
+    default='/SM_DATA/sm_scripts/sm_mail_alert.sh',
+    help="Command to run when DHCP discovery error is encountered.  Two arguments are provided, 1-Subject Line, 2-Body."
+)
 # Function to dynamically cast bytes to strings - scapy can return bytes or strings for DHCP responses
 def bytes2str(s):
     if type(s) is str:
@@ -199,13 +206,14 @@ while True:
         if DHCP in result:
             # We only care about DHCPOFFER
             if ("message-type", 2) in result[DHCP].options:
-                # Check that our DHCP server's MAC is valid, exit with error if not
+                # Check that our DHCP server's MAC is valid, mail with error if not
                 if result.src not in macs:
+                    msg = f"Script returned an unknown DHCP server.\nPermitted MACs: {macs}\nDHCP MAC: {result.src}"
                     print(
-                        f"Script returned an unknown DHCP server.\nPermitted MACs: {macs}\nDHCP MAC: {result.src}",
+                        msg, 
                         file=sys.stderr,
                     )
-                    exit(-1)
+                    run([args.command, 'DHCP Discovery Error', msg])
                 else:
                     pass
 
@@ -252,8 +260,9 @@ while True:
 
     # If the number of unique offers is less than valid MACs exit with error code
     if len(offers.keys()) < len(macs):
-        print("Fewer than configured DHCP offers received.", file=sys.stderr)
-        exit(-1)
+        msg = "Fewer than configured DHCP offers received."
+        print(msg, file=sys.stderr)
+        run([args.command, 'DHCP Discovery Error', msg])
 
     for offer in offers.keys():
         mac_address = offers[offer]["bootp_payload"]["src"]
