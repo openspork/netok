@@ -8,9 +8,13 @@ WantedBy=default.target
 
 [Service]
 Environment=PYTHONUNBUFFERED=1
-ExecStart=SCRIPTDIR/venv/bin/python SCRIPTDIR/query_dhcp.py --output -f 1
+
+# The -f (frequency) flag below will perform DHCP discovery and issue systemd watchdog notifications every 60 seconds.
+# Make sure the value for -f is LESS than the "WatchdogSec" Parameter below
+ExecStart=SCRIPTDIR/venv/bin/python SCRIPTDIR/query_dhcp.py --output -f 60
+
 # Tell systemd python will keep it up to date with notifications
 Type=notify
-# Issue watchdog notications every 5 min, more counts as a failure
+# Expect watchdog notications every 5 mininutes.  Make sure this is HIGHER than the -f parameter in the "ExecStart" parameter above.
 WatchdogSec=300
 Restart=always
